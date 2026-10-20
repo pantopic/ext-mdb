@@ -48,6 +48,7 @@ type meta struct {
 	ptrFlg    uint32
 	ptrErr    uint32
 	txn       *xsync.Map[uint32, *lmdb.Txn]
+	txnClose  *xsync.Map[uint32, chan struct{}]
 	txnFlags  *xsync.Map[uint32, uint32]
 	cursor    *xsync.Map[uint32, *lmdb.Cursor]
 	txnID     uint32
@@ -79,6 +80,7 @@ func (h *hostModule) InitContext(ctx context.Context, m api.Module) (context.Con
 	}
 	meta := &meta{
 		txn:      xsync.NewMap[uint32, *lmdb.Txn](),
+		txnClose: xsync.NewMap[uint32, chan struct{}](),
 		txnFlags: xsync.NewMap[uint32, uint32](),
 		cursor:   xsync.NewMap[uint32, *lmdb.Cursor](),
 	}
@@ -315,9 +317,22 @@ func (h *hostModule) Register(ctx context.Context, r wazero.Runtime) (err error)
 					return
 				}
 				id := atomic.AddUint32(&meta.txnID, 1)
+				chanClose := make(chan struct{})
 				meta.txn.Store(id, txn)
 				meta.txnFlags.Store(id, flags(m, meta))
+				meta.txnClose.Store(id, chanClose)
 				writeUint32(m, meta.ptrTxn, id)
+				go func() {
+					select {
+					case <-ctx.Done():
+						txn.Abort()
+						meta.txn.Delete(id)
+						meta.txnFlags.Delete(id)
+						meta.txnClose.Delete(id)
+						writeUint32(m, meta.ptrTxn, 0)
+					case <-chanClose:
+					}
+				}()
 			})
 		case func(*lmdb.Txn, uint32):
 			register(name, func(ctx context.Context, m api.Module, stack []uint64) {
@@ -326,6 +341,9 @@ func (h *hostModule) Register(ctx context.Context, r wazero.Runtime) (err error)
 				id := txnID(m, meta)
 				meta.txn.Delete(id)
 				meta.txnFlags.Delete(id)
+				if chanClose, ok := meta.txnClose.LoadAndDelete(id); ok {
+					close(chanClose)
+				}
 				writeUint32(m, meta.ptrTxn, 0)
 			})
 		case func(*lmdb.Txn, uint32) error:
@@ -335,6 +353,9 @@ func (h *hostModule) Register(ctx context.Context, r wazero.Runtime) (err error)
 				id := txnID(m, meta)
 				meta.txn.Delete(id)
 				meta.txnFlags.Delete(id)
+				if chanClose, ok := meta.txnClose.LoadAndDelete(id); ok {
+					close(chanClose)
+				}
 				writeError(m, meta, err)
 				writeUint32(m, meta.ptrTxn, 0)
 			})
