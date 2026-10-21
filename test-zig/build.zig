@@ -4,7 +4,7 @@ pub fn build(b: *std.Build) void {
     const optimize = b.standardOptimizeOption(.{ .preferred_optimize_mode = .ReleaseSmall });
     const target = b.resolveTargetQuery(.{ .cpu_arch = .wasm32, .os_tag = .freestanding });
 
-    const sdk = b.dependency("sdk_zig", .{ .optimize = optimize });
+    const sdk = b.dependency("sdk_zig", .{});
 
     const exe = b.addExecutable(.{
         .name = "test-zig",
