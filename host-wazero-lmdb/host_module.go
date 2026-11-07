@@ -74,7 +74,11 @@ func (h *hostModule) Name() string {
 }
 
 func (h *hostModule) InitContext(ctx context.Context, m api.Module) (context.Context, error) {
-	stack, err := m.ExportedFunction(`__mdb`).Call(ctx)
+	fn := m.ExportedFunction(`__mdb`)
+	if fn == nil {
+		return ctx, nil
+	}
+	stack, err := fn.Call(ctx)
 	if err != nil {
 		return ctx, err
 	}

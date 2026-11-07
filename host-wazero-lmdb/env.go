@@ -10,7 +10,7 @@ import (
 func EnvCreate(ctx context.Context) *lmdb.Env {
 	v := ctx.Value(ctxKeyDir)
 	if v == nil {
-		panic(`directory missing`)
+		return nil
 	}
 	dir := v.(string)
 	err := os.MkdirAll(dir, 0700)
