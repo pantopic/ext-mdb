@@ -112,6 +112,8 @@ func (h *hostModule) ContextCopy(dst, src context.Context) context.Context {
 		dst = context.WithValue(dst, ctxKeyMeta, v.(*meta))
 		if v := src.Value(ctxKeyEnv); v != nil {
 			dst = context.WithValue(dst, ctxKeyEnv, v.(*lmdb.Env))
+		} else if v := dst.Value(ctxKeyEnv); v != nil {
+			dst = context.WithValue(dst, ctxKeyEnv, v.(*lmdb.Env))
 		} else {
 			dst = context.WithValue(dst, ctxKeyEnv, EnvCreate(src))
 		}
