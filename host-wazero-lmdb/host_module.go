@@ -3,6 +3,7 @@ package wazero_lmdb
 import (
 	"context"
 	"encoding/binary"
+	"fmt"
 	"io"
 	"log"
 	"log/slog"
@@ -58,11 +59,13 @@ type meta struct {
 type hostModule struct {
 	sync.RWMutex
 
-	module api.Module
+	dirLocal string
 }
 
 func New(opts ...Option) *hostModule {
-	p := &hostModule{}
+	p := &hostModule{
+		dirLocal: os.TempDir() + "/pantopic/ext-mdb",
+	}
 	for _, opt := range opts {
 		opt(p)
 	}
@@ -71,6 +74,10 @@ func New(opts ...Option) *hostModule {
 
 func (h *hostModule) Name() string {
 	return Name
+}
+
+func (h *hostModule) Init(ctx context.Context, shardID, replicaID uint64) context.Context {
+	return EnvRegister(ctx, EnvCreate(EnvRegisterDir(ctx, fmt.Sprintf("%s/%d/%d/mdb", h.dirLocal, shardID, replicaID))))
 }
 
 func (h *hostModule) InitContext(ctx context.Context, m api.Module) (context.Context, error) {
@@ -111,8 +118,6 @@ func (h *hostModule) ContextCopy(dst, src context.Context) context.Context {
 		dst = context.WithValue(dst, ctxKeyMeta, v.(*meta))
 		if v := src.Value(ctxKeyEnv); v != nil {
 			dst = context.WithValue(dst, ctxKeyEnv, v.(*lmdb.Env))
-		} else if v := dst.Value(ctxKeyEnv); v == nil {
-			dst = context.WithValue(dst, ctxKeyEnv, EnvCreate(dst))
 		}
 	}
 	return dst
@@ -347,7 +352,7 @@ func (h *hostModule) Register(ctx context.Context, r wazero.Runtime) (err error)
 			log.Panicf("Method signature implementation missing: %#v", fn)
 		}
 	}
-	h.module, err = builder.Instantiate(ctx)
+	_, err = builder.Instantiate(ctx)
 	return
 }
 

@@ -10,7 +10,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/PowerDNS/lmdb-go/lmdb"
 	"github.com/tetratelabs/wazero"
 	"github.com/tetratelabs/wazero/imports/wasi_snapshot_preview1"
 )
@@ -32,16 +31,18 @@ func TestModule(t *testing.T) {
 
 func testModule(t *testing.T, testwasm []byte, path string) {
 	var (
-		optEnv uint = lmdb.NoMemInit | lmdb.NoReadahead | lmdb.NoSync | lmdb.NoMetaSync | lmdb.NoLock | lmdb.NoSubdir | lmdb.Create
-		ctx         = context.Background()
-		out         = &bytes.Buffer{}
+		ctx = context.Background()
+		out = &bytes.Buffer{}
 	)
 	r := wazero.NewRuntimeWithConfig(ctx, wazero.NewRuntimeConfig().
 		WithMemoryLimitPages(64)) // 4 MB
 	wasi_snapshot_preview1.MustInstantiate(ctx, r)
 
 	os.RemoveAll(path)
-	hostModule := New()
+	hostModule := New(
+		WithDirLocal(path),
+	)
+	ctx = hostModule.Init(ctx, 123, 456)
 	hostModule.Register(ctx, r)
 
 	compiled, err := r.CompileModule(ctx, testwasm)
@@ -63,25 +64,6 @@ func testModule(t *testing.T, testwasm []byte, path string) {
 	if v := readUint32(mod, meta.ptrKeyCap); v != 511 {
 		t.Errorf("incorrect maximum key length: %#v %d", meta, v)
 	}
-
-	env, err := lmdb.NewEnv()
-	if err != nil {
-		t.Fatalf(`%v`, err)
-	}
-	if err = env.SetMapSize(int64(16 << 30)); err != nil {
-		t.Fatalf(`%v`, err)
-	}
-	if err = env.SetMaxDBs(256); err != nil {
-		t.Fatalf(`%v`, err)
-	}
-	path = fmt.Sprintf(`%s/local/%016x`, path, 123)
-	if err = os.MkdirAll(path, 0755); err != nil {
-		t.Fatalf(`%v`, err)
-	}
-	if err = env.Open(fmt.Sprintf(`%s/%s.mdb`, path, `data`), optEnv|lmdb.Create, 0700); err != nil {
-		t.Fatalf(`%v`, err)
-	}
-	ctx = context.WithValue(ctx, ctxKeyEnv, env)
 
 	call := func(cmd string, params ...uint64) {
 		if _, err := mod.ExportedFunction(cmd).Call(ctx, params...); err != nil {
